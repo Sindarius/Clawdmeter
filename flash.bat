@@ -9,17 +9,17 @@ set PORT=COM3
 echo.
 echo  Clawdmeter firmware flash
 echo  ─────────────────────────
-echo  [1] waveshare_amoled_216      2.16" 480x480  (default)
-echo  [2] waveshare_amoled_18       1.8"  368x448
-echo  [3] waveshare_amoled_241      2.41"
+echo  [1] waveshare_amoled_241      2.41"           (default)
+echo  [2] waveshare_amoled_216      2.16" 480x480
+echo  [3] waveshare_amoled_18       1.8"  368x448
 echo  [4] waveshare_amoled_216_c6   2.16" C6 variant
 echo.
 set /p CHOICE="Board [1]: "
 
-if "%CHOICE%"==""  set ENV=waveshare_amoled_216
-if "%CHOICE%"=="1" set ENV=waveshare_amoled_216
-if "%CHOICE%"=="2" set ENV=waveshare_amoled_18
-if "%CHOICE%"=="3" set ENV=waveshare_amoled_241
+if "%CHOICE%"==""  set ENV=waveshare_amoled_241
+if "%CHOICE%"=="1" set ENV=waveshare_amoled_241
+if "%CHOICE%"=="2" set ENV=waveshare_amoled_216
+if "%CHOICE%"=="3" set ENV=waveshare_amoled_18
 if "%CHOICE%"=="4" set ENV=waveshare_amoled_216_c6
 
 if not defined ENV (
