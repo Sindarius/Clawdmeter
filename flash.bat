@@ -1,7 +1,8 @@
 @echo off
 setlocal
 
-set PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe
+set PIO=%LOCALAPPDATA%\Packages\PythonSoftwareFoundation.Python.3.10_qbz5n2kfra8p0\LocalCache\local-packages\Python310\Scripts\pio.exe
+if not exist "%PIO%" set PIO=%USERPROFILE%\.platformio\penv\Scripts\pio.exe
 set FIRMWARE=%~dp0firmware
 set PORT=COM3
 
