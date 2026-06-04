@@ -21,6 +21,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 
 # Repo root = the directory that CONTAINS the `daemon` package (this file is
 # <repo>/daemon/tray_windows.py). Resolve it from __file__ so the package
@@ -234,11 +235,30 @@ def main() -> None:
             autostart.enable(tray_script=os.path.abspath(__file__))
         icon.update_menu()
 
+    def _on_open_log(_icon_ref, _item) -> None:
+        # Resolve through the Windows Store Python AppData virtualization layer so
+        # os.startfile (which runs outside the sandbox) gets the real disk path.
+        log_path = (
+            Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+            / "Clawdmeter"
+            / "daemon.log"
+        ).resolve()
+        try:
+            os.startfile(str(log_path))
+        except OSError:
+            # Log not written yet — open the folder so the user can see it exist
+            try:
+                os.startfile(str(log_path.parent))
+            except OSError:
+                pass
+
     icon.menu = Menu(
         # Non-clickable status header; text updates via update_menu() on state change.
         MenuItem(lambda _item: header_text(ts), None, enabled=False),
         # Start-at-login toggle: checked= is a CALLABLE for live query (Pitfall 6).
         MenuItem("Start at login", _on_toggle, checked=lambda _item: autostart.is_enabled()),
+        MenuItem("Open log", _on_open_log),
+        Menu.SEPARATOR,
         MenuItem("Quit", _on_quit),
     )
 
