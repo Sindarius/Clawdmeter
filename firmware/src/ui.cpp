@@ -293,8 +293,7 @@ static void make_usage_panel(lv_obj_t* parent, int y, const char* pill_text,
     lv_obj_set_pos(*out_reset, 0, L.usage_reset_y);
 }
 
-// Pairing hint — shown when disconnected so the screen isn't empty and the
-// user knows how to (re)pair. Wording matches the 3-second release gesture.
+// Waiting hint — shown on startup until the daemon sends the first payload.
 static void build_pair_group(lv_obj_t* parent) {
     pair_group = lv_obj_create(parent);
     lv_obj_set_size(pair_group, L.scr_w, L.scr_h - L.content_y);
@@ -306,24 +305,24 @@ static void build_pair_group(lv_obj_t* parent) {
     lv_obj_add_flag(pair_group, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     lv_obj_t* l1 = lv_label_create(pair_group);
-    lv_label_set_text(l1, "To pair");
+    lv_label_set_text(l1, "Waiting for host");
     lv_obj_set_style_text_font(l1, L.bt_status_font, 0);
     lv_obj_set_style_text_color(l1, COL_TEXT, 0);
     lv_obj_align(l1, LV_ALIGN_TOP_MID, 0, 40);
 
     lv_obj_t* l2 = lv_label_create(pair_group);
-    lv_label_set_text(l2, "hold the power button");
+    lv_label_set_text(l2, "Start the Clawdmeter daemon");
     lv_obj_set_style_text_font(l2, L.bt_device_font, 0);
     lv_obj_set_style_text_color(l2, COL_DIM, 0);
     lv_obj_align(l2, LV_ALIGN_TOP_MID, 0, 120);
 
     lv_obj_t* l3 = lv_label_create(pair_group);
-    lv_label_set_text(l3, "for 3 seconds, then release");
+    lv_label_set_text(l3, "and plug in via USB");
     lv_obj_set_style_text_font(l3, L.bt_device_font, 0);
     lv_obj_set_style_text_color(l3, COL_DIM, 0);
     lv_obj_align(l3, LV_ALIGN_TOP_MID, 0, 160);
 
-    lv_obj_add_flag(pair_group, LV_OBJ_FLAG_HIDDEN);  // ui_update_ble_status decides
+    lv_obj_add_flag(pair_group, LV_OBJ_FLAG_HIDDEN);  // ui_set_connected decides
 }
 
 static void init_usage_screen(lv_obj_t* scr) {
@@ -454,10 +453,10 @@ void ui_tick_anim(void) {
 
         static char tbuf[64];
         if (elapsed_s < POLL_INTERVAL_S) {
-            snprintf(tbuf, sizeof(tbuf), "updated %s \xC2\xB7 ~%us",
+            snprintf(tbuf, sizeof(tbuf), "updated %s  ~%us",
                      ago, (uint32_t)POLL_INTERVAL_S - elapsed_s);
         } else {
-            snprintf(tbuf, sizeof(tbuf), "updated %s \xC2\xB7 updating\xE2\x80\xA6", ago);
+            snprintf(tbuf, sizeof(tbuf), "updated %s  updating\xE2\x80\xA6", ago);
         }
         lv_label_set_text(lbl_updated, tbuf);
     }
@@ -468,10 +467,10 @@ void ui_tick_anim(void) {
     anim_spinner_idx = (anim_phase < SPINNER_COUNT) ? anim_phase
                                                     : (SPINNER_PHASES - anim_phase);
 
-    // Status text by priority. Whimsical messages only when connected & settled.
+    // Status text by priority. Whimsical messages only after first data received.
     const char* text;
-    if (!s_ble_connected) {
-        text = ble_has_bonds() ? "Disconnected" : "Pairing";
+    if (last_data_ms == 0) {
+        text = "Waiting";
     } else if (now - connected_at_ms < 5000) {
         text = "Connected";
     } else {
@@ -527,13 +526,10 @@ screen_t ui_get_current_screen(void) {
     return current_screen;
 }
 
-void ui_update_ble_status(ble_state_t state, const char* name, const char* mac) {
-    (void)name; (void)mac;
+void ui_set_connected(bool connected) {
     bool was_connected = s_ble_connected;
-    s_ble_connected = (state == BLE_STATE_CONNECTED);
+    s_ble_connected = connected;
 
-    // Connected → usage panels; otherwise → pairing hint. The bottom status
-    // line carries the live state word (Connected / Disconnected / Pairing).
     if (usage_group && pair_group) {
         if (s_ble_connected) {
             lv_obj_clear_flag(usage_group, LV_OBJ_FLAG_HIDDEN);

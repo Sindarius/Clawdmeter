@@ -6,7 +6,6 @@
 
 #include "data.h"
 #include "ui.h"
-#include "ble.h"
 #include "splash.h"
 #include "usage_rate.h"
 #include "idle.h"
@@ -115,10 +114,14 @@ static bool parse_json(const char* json, UsageData* out) {
     return true;
 }
 
-// ---- Serial command buffer ----
-#define CMD_BUF_SIZE 64
-static char cmd_buf[CMD_BUF_SIZE];
-static int cmd_pos = 0;
+// ---- Serial input buffer ----
+// Handles two line types:
+//   { ... }   JSON usage payload from the daemon
+//   screenshot  debug capture command
+#define SERIAL_BUF_SIZE 512
+static char serial_buf[SERIAL_BUF_SIZE];
+static int  serial_pos = 0;
+static bool serial_json_ready = false;  // set when a JSON line is buffered
 
 static void send_screenshot() {
 #ifndef BOARD_HAS_PSRAM
@@ -158,15 +161,20 @@ static void send_screenshot() {
 #endif
 }
 
-static void check_serial_cmd() {
+static void check_serial() {
     while (Serial.available()) {
         char c = Serial.read();
         if (c == '\n' || c == '\r') {
-            cmd_buf[cmd_pos] = '\0';
-            if (strcmp(cmd_buf, "screenshot") == 0) send_screenshot();
-            cmd_pos = 0;
-        } else if (cmd_pos < CMD_BUF_SIZE - 1) {
-            cmd_buf[cmd_pos++] = c;
+            if (serial_pos == 0) continue;
+            serial_buf[serial_pos] = '\0';
+            if (serial_buf[0] == '{') {
+                serial_json_ready = true;   // loop() will pick this up
+            } else if (strcmp(serial_buf, "screenshot") == 0) {
+                send_screenshot();
+            }
+            serial_pos = 0;
+        } else if (serial_pos < SERIAL_BUF_SIZE - 1) {
+            serial_buf[serial_pos++] = c;
         }
     }
 }
@@ -214,135 +222,49 @@ void setup() {
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, my_touch_cb);
 
-    ble_init();
     input_hal_init();
 
     ui_init();
-    ui_update_ble_status(ble_get_state(), ble_get_device_name(), ble_get_mac_address());
+    ui_set_connected(false);   // show "Waiting for host" until first payload arrives
     ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_show_screen(SCREEN_SPLASH);
 
-    Serial.printf("Dashboard ready (%s, %dx%d), waiting for data on BLE...\n",
+    Serial.printf("Dashboard ready (%s, %dx%d), waiting for JSON on USB serial...\n",
         board_caps().name, W, H);
 }
 
-static ble_state_t last_ble_state = BLE_STATE_INIT;
-
-// Hold-to-pair gesture: hold the PWR button ~3s, then RELEASE → clear all BLE
-// bonds and re-advertise. Clearing on *release* (not while held) is deliberate:
-// holding to power the device OFF (AXP hardware shutdown at 8s) must not wipe
-// the bond — a power-off hold never releases before shutdown. To stop a
-// "chicken-out" release just before 8s from pairing, the gesture disarms at 6s.
-//
-//   ~1.5s long-press edge → PENDING
-//   3.0s (+1500)          → ARMED   (release from here clears bonds)
-//   6.0s (+4500)          → DISARMED (no clear; AXP powers off at 8s)
-#define PAIR_ARM_AFTER_LONG_MS    1500   // 3.0s total
-#define PAIR_DISARM_AFTER_LONG_MS 4500   // 6.0s total
-enum pair_state_t { PAIR_IDLE, PAIR_PENDING, PAIR_ARMED };
-static pair_state_t pair_state        = PAIR_IDLE;
-static uint32_t     pair_long_seen_ms = 0;
-
-static void pair_tick(void) {
-    if (pair_state == PAIR_IDLE && power_hal_pwr_long_pressed()) {
-        pair_state = PAIR_PENDING;
-        pair_long_seen_ms = millis();
-        (void)power_hal_pwr_released();  // drain any stale release edge
-        Serial.println("PWR long-press: hold to ~3s then release to pair");
-        return;
-    }
-    if (pair_state == PAIR_IDLE) return;
-
-    if (power_hal_pwr_released()) {
-        if (pair_state == PAIR_ARMED) {
-            Serial.println("Pair: released in window — clearing bonds, advertising");
-            ble_clear_bonds();
-        } else {
-            Serial.println("Pair: released too early — cancelled");
-        }
-        pair_state = PAIR_IDLE;
-        return;
-    }
-
-    uint32_t held = millis() - pair_long_seen_ms;
-    if (pair_state == PAIR_PENDING && held >= PAIR_ARM_AFTER_LONG_MS) {
-        pair_state = PAIR_ARMED;
-        Serial.println("Pair: armed — release to pair");
-    } else if (pair_state == PAIR_ARMED && held >= PAIR_DISARM_AFTER_LONG_MS) {
-        pair_state = PAIR_IDLE;  // power-off territory; don't pair
-        Serial.println("Pair: disarmed (holding toward power-off)");
-    }
-}
 
 void loop() {
     idle_tick();
     lv_timer_handler();
     ui_tick_anim();
-    ble_tick();
     power_hal_tick();
     imu_hal_tick();
     splash_tick();
-    // Rotation transition (blank + ramp) would fight the idle fade — skip
-    // ticks while the panel is dark. A rotation that happens during sleep
-    // is detected by the next tick after wake and ramped in then.
     if (!idle_is_asleep()) display_hal_tick();
 
     // ---- Physical buttons ----
-    //   PRIMARY   → HID Space  (Claude Code voice-mode PTT)
-    //   SECONDARY → HID Shift+Tab  (mode toggle; only if the board has one)
-    //   PWR       → on splash: cycle animations; on usage: cycle brightness;
-    //               hold ~3s + release: pairing mode
-    // First press from sleep is consumed as a wake-only event by
-    // idle_consume_wake_press(); the normal action fires from the second
-    // press. Activity bookkeeping happens inside idle_consume_wake_press
-    // so no separate idle_note_activity() call is needed here.
+    //   PRIMARY / SECONDARY → wake from idle (first press), otherwise ignored
+    //   PWR → on splash: cycle animations; on usage: cycle brightness
     {
         static bool primary_was = false;
-        static bool primary_wake_swallowed = false;
         bool primary_now = input_hal_is_held(INPUT_BTN_PRIMARY);
-        if (primary_now != primary_was) {
-            if (primary_now) {
-                if (idle_consume_wake_press()) primary_wake_swallowed = true;
-                else                            ble_keyboard_press(0x2C, 0);  // HID Space, no mods
-            } else {
-                if (primary_wake_swallowed) primary_wake_swallowed = false;
-                else                        ble_keyboard_release();
-            }
-            primary_was = primary_now;
-        }
+        if (primary_now && !primary_was) idle_consume_wake_press();
+        primary_was = primary_now;
 
         if (board_caps().button_count >= 2) {
             static bool secondary_was = false;
-            static bool secondary_wake_swallowed = false;
             bool secondary_now = input_hal_is_held(INPUT_BTN_SECONDARY);
-            if (secondary_now != secondary_was) {
-                if (secondary_now) {
-                    if (idle_consume_wake_press()) secondary_wake_swallowed = true;
-                    else                            ble_keyboard_press(0x2B, 0x02);  // HID Tab + LEFT_SHIFT
-                } else {
-                    if (secondary_wake_swallowed) secondary_wake_swallowed = false;
-                    else                          ble_keyboard_release();
-                }
-                secondary_was = secondary_now;
-            }
+            if (secondary_now && !secondary_was) idle_consume_wake_press();
+            secondary_was = secondary_now;
         }
 
         if (power_hal_pwr_pressed()) {
             if (!idle_consume_wake_press()) {
-                // On splash: cycle animations. On the usage view: cycle
-                // screen brightness (single non-splash view, no more screens).
                 if (ui_get_current_screen() == SCREEN_SPLASH) splash_next();
                 else                                          brightness_cycle();
             }
         }
-
-        pair_tick();
-    }
-
-    ble_state_t bs = ble_get_state();
-    if (bs != last_ble_state) {
-        last_ble_state = bs;
-        ui_update_ble_status(bs, ble_get_device_name(), ble_get_mac_address());
     }
 
     static int  last_pct      = -2;
@@ -355,10 +277,16 @@ void loop() {
         ui_update_battery(pct, charging);
     }
 
-    check_serial_cmd();
+    check_serial();
 
-    if (ble_has_data()) {
-        if (parse_json(ble_get_data(), &usage)) {
+    if (serial_json_ready) {
+        serial_json_ready = false;
+        if (parse_json(serial_buf, &usage)) {
+            static bool ever_connected = false;
+            if (!ever_connected) {
+                ever_connected = true;
+                ui_set_connected(true);
+            }
             int g_before = usage_rate_group();
             usage_rate_sample(usage.session_pct);
             int g_after = usage_rate_group();
@@ -368,9 +296,9 @@ void loop() {
                 if (splash_is_active()) splash_pick_for_current_rate();
             }
             ui_update(&usage);
-            ble_send_ack();
+            Serial.println("{\"ack\":true}");
         } else {
-            ble_send_nack();
+            Serial.println("{\"err\":true}");
         }
     }
 
