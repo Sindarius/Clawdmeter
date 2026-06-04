@@ -226,7 +226,6 @@ void setup() {
 
     ui_init();
     ui_set_connected(false);   // show "Waiting for host" until first payload arrives
-    ui_update_battery(power_hal_battery_pct(), power_hal_is_charging());
     ui_show_screen(SCREEN_SPLASH);
 
     Serial.printf("Dashboard ready (%s, %dx%d), waiting for JSON on USB serial...\n",
@@ -265,16 +264,6 @@ void loop() {
                 else                                          brightness_cycle();
             }
         }
-    }
-
-    static int  last_pct      = -2;
-    static bool last_charging = false;
-    int  pct      = power_hal_battery_pct();
-    bool charging = power_hal_is_charging();
-    if (pct != last_pct || charging != last_charging) {
-        last_pct = pct;
-        last_charging = charging;
-        ui_update_battery(pct, charging);
     }
 
     check_serial();

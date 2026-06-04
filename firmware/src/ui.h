@@ -14,4 +14,3 @@ void ui_show_screen(screen_t screen);
 void ui_toggle_splash(void);
 screen_t ui_get_current_screen(void);
 void ui_set_connected(bool connected);
-void ui_update_battery(int percent, bool charging);
