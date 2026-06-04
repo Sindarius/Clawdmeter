@@ -194,6 +194,16 @@ Right-click the tray icon for the menu:
 - **Status header** (non-clickable) — live status + last data sync time.
 - **Start at login** (checkable toggle) — enables or disables autostart at runtime.
   Reflects the current registry state each time the menu opens.
+- **COM Port** (submenu) — lists the serial ports currently present, re-enumerated every
+  time you open it (hot-plugged adapters appear without a restart). The port the daemon is
+  using is marked with a radio check. Click a different port to switch: the choice is saved
+  to `%LOCALAPPDATA%\Clawdmeter\port.txt` and the daemon drops the current port and reopens
+  on the new one within about a second — no restart needed. This is how you switch between,
+  e.g., `COM3` on one machine and `COM4` on another. A saved port that isn't currently
+  present is still listed (marked *not connected*) so the selection stays visible.
+
+  Port resolution priority: a port chosen here (saved) wins; otherwise the `CLAWDMETER_PORT`
+  environment variable; otherwise the `COM3` default.
 - **Quit** — stops the daemon cleanly and exits with no lingering process. It releases the
   daemon's own data connection but does **not** drop the Windows Bluetooth pairing — the
   device stays connected to Windows and keeps showing your last-synced usage (point-in-time

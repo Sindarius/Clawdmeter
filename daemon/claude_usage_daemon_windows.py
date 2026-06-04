@@ -208,7 +208,73 @@ def _read_expiry() -> str:
     return "expiry unknown"
 
 
+def _port_config_path() -> Path:
+    """Path to the persisted COM-port selection.
+
+    Lives beside daemon.log in %LOCALAPPDATA%\\Clawdmeter so a port chosen from
+    the tray menu survives restarts and is per-machine (COM3 here, COM4 there).
+    """
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
+    return base / "Clawdmeter" / "port.txt"
+
+
+def get_saved_port() -> str | None:
+    """Return the COM port last chosen from the tray menu, or None if unset.
+
+    Best-effort: any read error (file absent, unreadable) is treated as "no
+    saved selection" so port resolution always falls through to env/default.
+    """
+    try:
+        val = _port_config_path().read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return val or None
+
+
+def save_port(port: str) -> bool:
+    """Persist the user's COM-port choice. Returns True on success.
+
+    Mirrors the log-dir creation in _build_file_logger(); failures are logged
+    and swallowed (a save failure must never crash the tray).
+    """
+    path = _port_config_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(port.strip(), encoding="utf-8")
+    except OSError as e:
+        log(f"Could not save port selection: {e}")
+        return False
+    log(f"Saved COM port selection: {port}")
+    return True
+
+
+def list_serial_ports() -> list[tuple[str, str]]:
+    """Enumerate currently-present serial ports as (device, description) pairs.
+
+    Re-queries the OS on every call (the tray calls this each time the COM-port
+    submenu is opened) so hot-plugged adapters appear without restarting.
+    Sorted by device for stable menu ordering.
+    """
+    try:
+        ports = list(serial.tools.list_ports.comports())
+    except Exception as e:  # pragma: no cover — enumeration is platform glue
+        log(f"Port enumeration failed: {e}")
+        return []
+    ports.sort(key=lambda p: p.device)
+    return [(p.device, (p.description or p.device)) for p in ports]
+
+
 def _effective_port() -> str:
+    """Resolve which COM port to open, in priority order.
+
+    1. A port explicitly chosen from the tray menu (persisted by save_port) —
+       an explicit user click always wins.
+    2. CLAWDMETER_PORT env var — first-run default before any menu selection.
+    3. PORT constant ("COM3") — final fallback.
+    """
+    saved = get_saved_port()
+    if saved:
+        return saved
     return os.environ.get("CLAWDMETER_PORT", PORT)
 
 
@@ -257,10 +323,25 @@ async def run_serial(stop_event: asyncio.Event, tray_state=None) -> None:
 
         if tray_state:
             tray_state.set_scanning()  # port open but no data sent yet
+            # We just opened whatever _effective_port() resolves to right now, so
+            # any pending switch request is already satisfied — clear it to avoid
+            # a redundant reopen on the first poll tick.
+            tray_state.reconnect_flag = False
 
         # --- poll loop ---
         try:
             while not stop_event.is_set():
+                # Port switched from the tray menu: drop this port and reopen on
+                # the newly-selected one. The finally: below closes `ser` and the
+                # outer while re-reads _effective_port(), so this picks up within
+                # one tick (~1s) of the user's click.
+                if tray_state is not None and getattr(
+                    tray_state, "reconnect_flag", False
+                ):
+                    tray_state.reconnect_flag = False
+                    log("Port change requested — reconnecting")
+                    break
+
                 # Drain any incoming serial lines (ack/nack from device)
                 try:
                     while ser.in_waiting:

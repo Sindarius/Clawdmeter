@@ -67,6 +67,16 @@ class TrayState:
         self.loop = None        # asyncio running loop (for call_soon_threadsafe)
         self.stop_event = None  # asyncio.Event (the existing clean-shutdown hook)
 
+        # Set True by the tray when the user picks a different COM port; the
+        # serial loop polls it each tick, drops the open port, and reopens on the
+        # newly-saved one. A plain bool is safe across threads here — a single
+        # writer (tray) flips it True, a single reader (loop) flips it back False.
+        self.reconnect_flag: bool = False
+
+    def request_reconnect(self) -> None:
+        """Ask the serial loop to drop its port and reopen the effective one."""
+        self.reconnect_flag = True
+
     def set_connected(self, ts: float) -> None:
         """Called after write_payload returns True.  ts = time.time()."""
         self.state = "connected"
@@ -181,7 +191,13 @@ def main() -> None:
     from pystray import Menu, MenuItem
 
     import daemon.autostart_windows as autostart
-    from daemon.claude_usage_daemon_windows import main as daemon_main, log as daemon_log
+    from daemon.claude_usage_daemon_windows import (
+        main as daemon_main,
+        log as daemon_log,
+        list_serial_ports,
+        save_port,
+        _effective_port,
+    )
     from daemon.icon_assets import load_logo_rgba, build_state_icons
 
     # Build per-state icons once at startup; swap icon.icon per tick (never recomposite).
@@ -235,6 +251,55 @@ def main() -> None:
             autostart.enable(tray_script=os.path.abspath(__file__))
         icon.update_menu()
 
+    def _make_port_handler(device: str):
+        """Build a click handler that persists `device` and triggers a reconnect."""
+        def _handler(_icon_ref, _item) -> None:
+            save_port(device)
+            ts.request_reconnect()
+            icon.update_menu()
+        return _handler
+
+    def _port_menu_items():
+        """Generate the COM-port submenu items, re-enumerated on every open.
+
+        pystray treats a Menu built from a single callable as dynamic: this
+        generator runs each time the submenu is displayed (pystray _base.Menu
+        .items), so freshly hot-plugged adapters show up without a restart.
+
+        A radio check marks the port the daemon will actually open
+        (_effective_port()). If that port isn't currently present (device
+        unplugged, or chosen on another machine), it's still listed at the
+        bottom marked "not connected" so the selection stays visible.
+        """
+        current = _effective_port()
+        present = list_serial_ports()
+        if not present:
+            yield MenuItem("No COM ports found", None, enabled=False)
+            yield MenuItem(f"Selected: {current} (not connected)", None, enabled=False)
+            return
+
+        devices = set()
+        for device, description in present:
+            devices.add(device)
+            label = f"{device} — {description}" if description != device else device
+            yield MenuItem(
+                label,
+                _make_port_handler(device),
+                # Bind device per-iteration (d=device) so the late-bound closure
+                # compares the right port; re-query inside the lambda so the check
+                # tracks the live selection.
+                checked=lambda _item, d=device: d == _effective_port(),
+                radio=True,
+            )
+
+        if current not in devices:
+            yield MenuItem(
+                f"{current} (not connected)",
+                _make_port_handler(current),
+                checked=lambda _item: True,
+                radio=True,
+            )
+
     def _on_open_log(_icon_ref, _item) -> None:
         # Resolve through the Windows Store Python AppData virtualization layer so
         # os.startfile (which runs outside the sandbox) gets the real disk path.
@@ -257,6 +322,9 @@ def main() -> None:
         MenuItem(lambda _item: header_text(ts), None, enabled=False),
         # Start-at-login toggle: checked= is a CALLABLE for live query (Pitfall 6).
         MenuItem("Start at login", _on_toggle, checked=lambda _item: autostart.is_enabled()),
+        # Dynamic submenu: a Menu built from a single callable is re-evaluated by
+        # pystray each time it opens, so the port list is always live (D-05).
+        MenuItem("COM Port", Menu(_port_menu_items)),
         MenuItem("Open log", _on_open_log),
         Menu.SEPARATOR,
         MenuItem("Quit", _on_quit),
