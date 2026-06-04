@@ -116,10 +116,25 @@ $BasePythonw = Join-Path $BasePrefix "pythonw.exe"
 
 Log "Launching tray app ..."
 $StartArgs = @{
-    FilePath         = $BasePythonw
     ArgumentList     = "`"$TrayScript`""
     WorkingDirectory = $RepoRoot
 }
-Start-Process @StartArgs
+
+# Prefer base pythonw.exe (no console window, avoids the venv-stub flash).
+# If the base prefix is in a protected directory (e.g. C:\Program Files\Python311\)
+# Start-Process may be denied — fall back to the venv python.exe with
+# -WindowStyle Hidden, which achieves the same result for a tray app.
+if (Test-Path $BasePythonw) {
+    try {
+        Start-Process -FilePath $BasePythonw @StartArgs -ErrorAction Stop
+        Log "Tray app started via $BasePythonw"
+    } catch {
+        Log "Base pythonw.exe launch denied; falling back to venv python.exe -WindowStyle Hidden"
+        Start-Process -FilePath $PythonExe @StartArgs -WindowStyle Hidden
+    }
+} else {
+    Log "pythonw.exe not found at base prefix; using venv python.exe -WindowStyle Hidden"
+    Start-Process -FilePath $PythonExe @StartArgs -WindowStyle Hidden
+}
 Log "Tray app started - look for the Clawdmeter icon in your notification area"
 Log "=== Install complete ==="

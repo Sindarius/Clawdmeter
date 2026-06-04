@@ -113,6 +113,7 @@ static lv_obj_t* lbl_weekly_pct;
 static lv_obj_t* lbl_weekly_label;
 static lv_obj_t* lbl_weekly_reset;
 static lv_obj_t* lbl_anim;      // status line: connection state + whimsical idle
+static lv_obj_t* lbl_updated;   // "updated Xs ago · ~Ys" timestamp line
 
 // ---- Battery indicator (shared, on top) ----
 static lv_obj_t* battery_img;
@@ -124,6 +125,9 @@ static lv_image_dsc_t logo_dsc;
 static screen_t current_screen = SCREEN_USAGE;
 static bool     s_ble_connected = false;   // cached BLE connection state
 static uint32_t connected_at_ms = 0;       // when we last entered CONNECTED ("Connected" dwell)
+static uint32_t last_data_ms = 0;         // lv_tick_get() when ui_update() last succeeded; 0 = never
+
+#define POLL_INTERVAL_S 60
 
 // Animation state
 static uint32_t anim_last_ms = 0;
@@ -364,7 +368,14 @@ static void init_usage_screen(lv_obj_t* scr) {
     lv_label_set_text(lbl_anim, "");
     lv_obj_set_style_text_font(lbl_anim, &font_mono_32, 0);
     lv_obj_set_style_text_color(lbl_anim, COL_ACCENT, 0);
-    lv_obj_align(lbl_anim, LV_ALIGN_BOTTOM_MID, 0, -15);
+    lv_obj_align(lbl_anim, LV_ALIGN_BOTTOM_MID, 0, -38);
+
+    // Timestamp line — "updated Xs ago · ~Ys" — hidden until first data arrives.
+    lbl_updated = lv_label_create(usage_container);
+    lv_label_set_text(lbl_updated, "");
+    lv_obj_set_style_text_font(lbl_updated, &font_styrene_14, 0);
+    lv_obj_set_style_text_color(lbl_updated, COL_DIM, 0);
+    lv_obj_align(lbl_updated, LV_ALIGN_BOTTOM_MID, 0, -8);
 }
 
 // ======== Public API ========
@@ -398,6 +409,8 @@ void ui_init(void) {
 void ui_update(const UsageData* data) {
     if (!data->valid) return;
 
+    last_data_ms = lv_tick_get();
+
     int s_pct = (int)(data->session_pct + 0.5f);
 
     lv_label_set_text_fmt(lbl_session_pct, "%d%%", s_pct);
@@ -425,6 +438,28 @@ void ui_tick_anim(void) {
     if (now - anim_msg_start >= ANIM_MSG_MS) {
         anim_msg_idx = (anim_msg_idx + 1) % ANIM_MSG_COUNT;
         anim_msg_start = now;
+    }
+
+    // Timestamp line — update once per second, only after first data arrival.
+    // Runs before the spinner early-return so it ticks regardless of spinner cadence.
+    static uint32_t ts_last_ms = 0;
+    if (last_data_ms > 0 && now - ts_last_ms >= 1000) {
+        ts_last_ms = now;
+        uint32_t elapsed_s = (now - last_data_ms) / 1000;
+
+        char ago[24];
+        if (elapsed_s < 60)        snprintf(ago, sizeof(ago), "%us ago", elapsed_s);
+        else if (elapsed_s < 3600) snprintf(ago, sizeof(ago), "%um ago", elapsed_s / 60);
+        else                       snprintf(ago, sizeof(ago), "%uh ago", elapsed_s / 3600);
+
+        static char tbuf[64];
+        if (elapsed_s < POLL_INTERVAL_S) {
+            snprintf(tbuf, sizeof(tbuf), "updated %s \xC2\xB7 ~%us",
+                     ago, (uint32_t)POLL_INTERVAL_S - elapsed_s);
+        } else {
+            snprintf(tbuf, sizeof(tbuf), "updated %s \xC2\xB7 updating\xE2\x80\xA6", ago);
+        }
+        lv_label_set_text(lbl_updated, tbuf);
     }
 
     if (now - anim_last_ms < spinner_ms[anim_spinner_idx]) return;

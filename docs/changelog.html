@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clawdmeter — Change History</title>
+  <style>
+    :root {
+      --bg:        #0f0f0f;
+      --surface:   #1a1a1a;
+      --border:    #2a2a2a;
+      --accent:    #D97757;   /* Anthropic terracotta */
+      --accent2:   #5a9fd4;  /* blue for firmware */
+      --accent3:   #6ec96e;  /* green for daemon */
+      --accent4:   #c47bd4;  /* purple for UX */
+      --text:      #e8e8e8;
+      --muted:     #888;
+      --code-bg:   #141414;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+
+    /* ── Header ── */
+    header { text-align: center; padding: 48px 0 40px; border-bottom: 1px solid var(--border); margin-bottom: 48px; }
+    header h1 { font-size: 2.4rem; letter-spacing: -.5px; }
+    header h1 span { color: var(--accent); }
+    header p { color: var(--muted); margin-top: 8px; }
+
+    /* ── TOC ── */
+    nav { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 28px; margin-bottom: 48px; }
+    nav h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 12px; }
+    nav ol { padding-left: 20px; }
+    nav li { margin: 5px 0; }
+    nav a { color: var(--text); text-decoration: none; }
+    nav a:hover { color: var(--accent); }
+
+    /* ── Section headings ── */
+    h2.section { font-size: 1.5rem; margin-bottom: 8px; padding-top: 12px; }
+    .section-meta { color: var(--muted); font-size: .85rem; margin-bottom: 24px; }
+    .tag { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: .72rem; font-weight: 600; margin-right: 6px; text-transform: uppercase; letter-spacing: .4px; }
+    .tag-fw   { background: #1a3050; color: var(--accent2); }
+    .tag-daemon { background: #1a3020; color: var(--accent3); }
+    .tag-ux   { background: #2a1a3a; color: var(--accent4); }
+    .tag-bug  { background: #3a1a1a; color: #e07070; }
+
+    /* ── Cards ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; margin-bottom: 16px; }
+    .card h3 { font-size: 1rem; margin-bottom: 8px; }
+    .card p  { color: #bbb; font-size: .9rem; }
+    .card p + p { margin-top: 8px; }
+
+    /* ── Diagrams ── */
+    .diagram { background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; padding: 28px 24px; margin: 24px 0; overflow-x: auto; }
+    .diagram pre { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: .82rem; line-height: 1.7; color: #ccc; white-space: pre; }
+
+    /* ── Code ── */
+    code { font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: .83rem; background: var(--code-bg); padding: 1px 6px; border-radius: 4px; color: #e0c07a; }
+
+    /* ── Diff blocks ── */
+    .diff { background: var(--code-bg); border-radius: 8px; padding: 14px 18px; margin: 14px 0; font-family: 'Cascadia Code','Fira Code','Consolas',monospace; font-size: .8rem; line-height: 1.7; }
+    .diff .del { color: #e06060; }
+    .diff .add { color: #60c060; }
+    .diff .ctx { color: #777; }
+    .diff .path { color: #aaa; margin-bottom: 6px; display: block; }
+
+    /* ── Inline flow diagram ── */
+    .flow { display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin: 20px 0; }
+    .flow-box { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; font-size: .82rem; text-align: center; min-width: 110px; }
+    .flow-arrow { color: var(--muted); font-size: 1.1rem; padding: 0 8px; }
+    .flow-box.highlight { border-color: var(--accent); color: var(--accent); }
+    .flow-box.blue   { border-color: var(--accent2); color: var(--accent2); }
+    .flow-box.green  { border-color: var(--accent3); color: var(--accent3); }
+    .flow-box.purple { border-color: var(--accent4); color: var(--accent4); }
+
+    /* ── Two-column ── */
+    .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+    @media (max-width: 640px) { .cols2 { grid-template-columns: 1fr; } }
+
+    /* ── Timeline ── */
+    .timeline { border-left: 2px solid var(--border); padding-left: 24px; margin: 24px 0; }
+    .tl-item { position: relative; margin-bottom: 28px; }
+    .tl-item::before { content: ''; position: absolute; left: -29px; top: 5px; width: 11px; height: 11px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
+    .tl-date { font-size: .75rem; color: var(--muted); margin-bottom: 2px; }
+    .tl-title { font-weight: 600; }
+    .tl-body  { font-size: .88rem; color: #aaa; margin-top: 4px; }
+
+    /* ── Note box ── */
+    .note { background: #1a1a2a; border-left: 3px solid var(--accent2); border-radius: 4px; padding: 12px 16px; margin: 16px 0; font-size: .88rem; color: #bbb; }
+
+    hr.section-divider { border: none; border-top: 1px solid var(--border); margin: 52px 0; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>Clawdmeter</span> — What Changed &amp; Why</h1>
+  <p>A full walk-through of every meaningful change made to get the device working end-to-end,<br>from the original single-board firmware to the multi-board, multi-platform system it is today.</p>
+</header>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<nav>
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#overview">System overview</a></li>
+    <li><a href="#board-18">AMOLED-1.8 board port</a></li>
+    <li><a href="#hal-refactor">HAL &amp; device-abstraction refactor</a></li>
+    <li><a href="#ux-collapse">UX collapse — single-screen + hold-to-pair</a></li>
+    <li><a href="#brightness">User-controlled brightness (NVS-persisted)</a></li>
+    <li><a href="#power-hal">Power HAL long-press edges</a></li>
+    <li><a href="#rotation-flash">Rotation flash brightness fix</a></li>
+    <li><a href="#splash-tint">Splash animation brand tint</a></li>
+    <li><a href="#ble-rename">BLE device rename: "Claude Controller" → "Clawdmeter"</a></li>
+    <li><a href="#macos-daemon">macOS daemon — retrieveConnected fix</a></li>
+    <li><a href="#windows-daemon">Windows daemon (brand-new)</a></li>
+    <li><a href="#amoled-18-rev2">AMOLED-1.8 hardware revision auto-detection</a></li>
+    <li><a href="#todays-fix">Today's fix — Windows DEVICE_NAME mismatch</a></li>
+  </ol>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="overview">
+  <h2 class="section">1 · System Overview</h2>
+  <p class="section-meta">How all the pieces fit together</p>
+
+  <p>Clawdmeter is a desk-side hardware widget that shows your Claude Code API usage in real time. The firmware runs on an ESP32-S3 AMOLED dev board; a host daemon on your PC polls the Anthropic API and pushes JSON to the device over BLE.</p>
+
+  <div class="diagram">
+    <pre>
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          HOST (Windows / macOS / Linux)                  │
+│                                                                          │
+│   Anthropic API  ──────►  Host daemon  ──────►  BLE GATT write          │
+│   (rate-limit headers)    (Python / Bash)       RX char 0x0002          │
+└────────────────────────────────────────────────────────────┬────────────┘
+                                                             │ BLE (NimBLE)
+                                                             │ "Clawdmeter"
+                                                             ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                       ESP32-S3 firmware (PlatformIO)                     │
+│                                                                          │
+│  ble.cpp ──► main.cpp ──► ui.cpp ──► display HAL ──► AMOLED panel      │
+│               │                                                          │
+│               └──► splash.cpp  (pixel-art animations, boot screen)      │
+│                                                                          │
+│  HAL layer:  display_hal / touch_hal / input_hal / power_hal / imu_hal  │
+│                                                                          │
+│  Board implementations (one per PlatformIO env):                        │
+│    boards/waveshare_amoled_216/   480×480  CO5300 + CST9220 + QMI8658  │
+│    boards/waveshare_amoled_18/    368×448  SH8601 or CO5300 (auto)     │
+└─────────────────────────────────────────────────────────────────────────┘
+    </pre>
+  </div>
+
+  <div class="flow">
+    <div class="flow-box blue">Anthropic API<br><small>rate-limit headers</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box green">Host daemon<br><small>poll every 60 s</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box">BLE GATT<br><small>"Clawdmeter"</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box highlight">ESP32-S3<br><small>firmware</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box purple">AMOLED display<br><small>usage meter</small></div>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="board-18">
+  <h2 class="section">2 · AMOLED-1.8 Board Port</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> commit <code>f3ed242</code> — May 17 2026</p>
+
+  <p>The project originally targeted only the Waveshare ESP32-S3-Touch-AMOLED-2.16 (480×480, CO5300 panel). A second board was ported: the Waveshare ESP32-S3-Touch-AMOLED-1.8 (368×448 portrait). The hardware differences required significant code additions.</p>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>🖥 Display</h3>
+      <p><strong>2.16":</strong> CO5300 QSPI, 480×480, SCLK=GPIO 38, RST direct</p>
+      <p><strong>1.8":</strong> SH8601 QSPI, 368×448 portrait, SCLK=GPIO 11, RST via XCA9554 IO expander</p>
+    </div>
+    <div class="card">
+      <h3>👆 Touch</h3>
+      <p><strong>2.16":</strong> CST9220 @ I2C 0x5A</p>
+      <p><strong>1.8":</strong> FT3168 @ I2C 0x38. Inline FocalTech register reader — avoids GPLv3 Arduino_DriveBus library.</p>
+    </div>
+    <div class="card">
+      <h3>🔌 IO Expander (new)</h3>
+      <p>XCA9554 / PCA9554 @ 0x20. Controls LCD_RST, TP_RST, audio amp enable. PWR button on EXIO4. <strong>Must init before display or touch.</strong></p>
+    </div>
+    <div class="card">
+      <h3>🔘 Buttons</h3>
+      <p><strong>2.16":</strong> 3 buttons (GPIO 0, 18, AXP PKEY)</p>
+      <p><strong>1.8":</strong> 2 buttons (GPIO 0 + XCA9554 EXIO4 PWR). No GPIO 18.</p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <pre>
+AMOLED-1.8 boot init order (critical):
+─────────────────────────────────────────────────────────────────
+ Wire.begin(SDA=15, SCL=14)
+       │
+       ▼
+ io_expander_init()          ← releases LCD_RST, TP_RST from reset
+       │                        (failure = display + touch silently dead)
+       ▼
+ gfx->begin()                ← SH8601 initialise via QSPI
+       │
+       ▼
+ ft3168_init()               ← FocalTech touch init
+       │
+       ▼
+ axp_init()   qmi_init()     ← PMU + IMU on same I2C bus
+    </pre>
+  </div>
+
+  <div class="note">The UI automatically adapts its layout: at boot <code>compute_layout()</code> reads <code>board_caps()</code> (width, height, button count) and selects fonts, margins, and element positions accordingly. No compile-time layout conditionals needed.</div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="hal-refactor">
+  <h2 class="section">3 · HAL &amp; Device-Abstraction Refactor</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> commit <code>2035121</code> — May 20 2026</p>
+
+  <p>The first board port was implemented using <code>#ifdef BOARD_AMOLED_18</code> guards spread across six shared source files (~30 blocks total). This was replaced by a clean HAL layer so that adding future boards never requires editing shared code.</p>
+
+  <div class="diagram">
+    <pre>
+Before: #ifdef sprawl                   After: HAL + per-board folders
+────────────────────────────────        ───────────────────────────────────────
+main.cpp                                firmware/src/
+  #ifdef BOARD_AMOLED_18                  hal/
+    ft3168_read(&x, &y);                    display_hal.h  ← init/begin/tick/draw
+  #else                                     touch_hal.h    ← init/read(x,y,pressed)
+    cst9220_read(&x, &y);                   input_hal.h    ← is_held(PRIMARY|SECONDARY)
+  #endif                                    power_hal.h    ← battery_pct/is_charging/…
+                                            imu_hal.h      ← rotation_quadrant
+ui.cpp                                      board_caps.h   ← W, H, button_count, has_*
+  #ifdef BOARD_AMOLED_18                  boards/
+    lv_font_t* big = &styrene_28;           waveshare_amoled_216/
+  #else                                       display.cpp  ← implements display_hal.h
+    lv_font_t* big = &tiempos_56;            touch.cpp    ← implements touch_hal.h
+  #endif                                      …
+                                            waveshare_amoled_18/
+                                              display.cpp
+                                              touch.cpp  io_expander.{h,cpp}
+                                              …
+                                            template/     ← copy to start a new port
+    </pre>
+  </div>
+
+  <p>PlatformIO's <code>build_src_filter</code> includes the shared code plus exactly one board folder per environment, so the compiler never sees competing implementations.</p>
+
+  <div class="card">
+    <h3>Key rule: no <code>#ifdef BOARD_*</code> in shared code</h3>
+    <p>Optional features are guarded by <code>BoardCaps</code> (runtime struct) for behaviour differences, and <code>BOARD_HAS_*</code> macros (compile-time, defined only inside a board's own folder) for hardware that isn't wired up at all. Shared code never branches on board identity.</p>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="ux-collapse">
+  <h2 class="section">4 · UX Collapse — Single Screen + Hold-to-Pair</h2>
+  <p class="section-meta"><span class="tag tag-ux">UX</span> commit <code>a6ed7d2</code> — Jun 2 2026</p>
+
+  <p>Originally the device had three navigable screens: Splash, Usage, and Bluetooth. The Bluetooth screen was removed; pairing is now a hold gesture on the PWR button from any screen.</p>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>Before</h3>
+      <p>3 screens: Splash → Usage → Bluetooth</p>
+      <p>Short press cycles screens. Bluetooth screen shows pairing status explicitly.</p>
+    </div>
+    <div class="card">
+      <h3>After</h3>
+      <p>1 primary screen: Usage (with BLE status line at top)</p>
+      <p>Short press: cycle brightness. <strong>Hold 3 s: toggle BLE pairing mode.</strong> Splash on boot (button press to dismiss).</p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <pre>
+Button event routing (after collapse):
+───────────────────────────────────────────────────────────
+ PWR short press (< 3 s, on release)  →  brightness cycle
+ PWR long press  (≥ 3 s, edge)        →  toggle BLE advertising / pairing
+ BOOT short press                     →  Space key (HID keyboard)
+ BOOT hold                            →  voice-mode trigger
+
+ Splash screen: any button press      →  advance to Usage screen
+───────────────────────────────────────────────────────────
+    </pre>
+  </div>
+
+  <p>The BLE status is now shown as a compact one-line indicator at the top of the Usage screen (connection state + device name + MAC address) rather than a dedicated screen, freeing the full display area for usage data.</p>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="brightness">
+  <h2 class="section">5 · User-Controlled Brightness (NVS-Persisted)</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> commit <code>ddb812a</code> — May 24 2026</p>
+
+  <p>Before: display brightness was a compile-time constant (200/255). After: the user can cycle through four levels via a short press on the PWR button, and the chosen level persists across power cycles via ESP32 NVS flash storage.</p>
+
+  <div class="diagram">
+    <pre>
+brightness.{h,cpp}   — new module
+─────────────────────────────────────────────────────────
+ Ramp: { 64, 128, 200, 255 }   (default = 200, same as old constant)
+
+ brightness_get()      → current level (read by idle + display modules)
+ brightness_next()     → advance ramp, save to NVS, apply via idle
+ brightness_set(n)     → direct set (used on boot restore)
+
+idle.cpp changes:
+  Old: fade DISPLAY_DEFAULT_BRIGHTNESS (constant) → 0 on idle
+  New: fade brightness_get() → 0 on idle; restore brightness_get() on wake
+       (user choice survives idle fade/wake cycles)
+
+display.cpp changes (AMOLED-216):
+  Old: post-rotation ramp targeted hard-coded 200
+  New: ramp targets brightness_get() so rotation doesn't reset user choice
+    </pre>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="power-hal">
+  <h2 class="section">6 · Power HAL Long-Press Edges</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> commit <code>98a513a</code> — May 24 2026</p>
+
+  <p>The hold-to-pair gesture (§4) requires the HAL to expose a "long-press" edge event from the PWR button. Each board implements this differently.</p>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>AMOLED-2.16 (AXP2101 PKEY)</h3>
+      <p>Enables AXP2101 PKEY LONG + POSITIVE IRQs. Hardware shutdown threshold bumped to 8 s so a 3–6 s hold gesture doesn't accidentally power off the device.</p>
+    </div>
+    <div class="card">
+      <h3>AMOLED-1.8 (XCA9554 EXIO4 poll)</h3>
+      <p>No hardware IRQ available. Long/release edges are synthesised in software from the polled GPIO level. Short-press fires on release-if-short to avoid false triggers during a hold.</p>
+    </div>
+  </div>
+
+  <p>Two new functions added to <code>power_hal.h</code>:</p>
+  <div class="diff">
+    <span class="add">+ power_hal_pwr_long_pressed()  → bool  // rising edge: held ≥ 3 s</span><br>
+    <span class="add">+ power_hal_pwr_released()      → bool  // falling edge after short press</span>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="rotation-flash">
+  <h2 class="section">7 · Rotation Flash Brightness Fix</h2>
+  <p class="section-meta"><span class="tag tag-bug">bug fix</span> commit <code>65e51a0</code> — May 30 2026</p>
+
+  <p>The CO5300 AMOLED can't rotate natively; the firmware does CPU pixel remapping in strips, then briefly blanks and re-brightens the panel to avoid tearing artefacts. This ramp was hardcoded to 200/255, so rotating the device reset whatever brightness the user had set.</p>
+
+  <div class="diff">
+    <span class="path">boards/waveshare_amoled_216/display.cpp</span>
+    <span class="del">- target_brightness = 200;  // hard-coded old default</span><br>
+    <span class="add">+ target_brightness = brightness_get();  // user's chosen level</span>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="splash-tint">
+  <h2 class="section">8 · Splash Animation Brand Tint</h2>
+  <p class="section-meta"><span class="tag tag-ux">UX</span> commit <code>bd5d45c</code> — May 24 2026</p>
+
+  <p>The 13 pixel-art Claude creature animations sourced from claudepix.vercel.app use a body colour of <code>#CD7F6A</code>. This was remapped in the conversion pipeline to the official Anthropic brand terracotta <code>#D97757</code>.</p>
+
+  <div class="flow">
+    <div class="flow-box">claudepix JSON<br><small>body = #CD7F6A</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box">convert_to_c.js<br><small>colour remap</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box highlight">splash_animations.h<br><small>body = #D97757</small></div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-box purple">AMOLED<br><small>on-device render</small></div>
+  </div>
+
+  <p>The remap is a two-line addition to <code>tools/convert_to_c.js</code>: it substitutes the source colour in the 10-entry per-animation palette before emitting the C header.</p>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="ble-rename">
+  <h2 class="section">9 · BLE Device Rename: "Claude Controller" → "Clawdmeter"</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> <span class="tag tag-daemon">daemon</span> commit <code>13cc423</code> — May 26 2026</p>
+
+  <p>For brand consistency the BLE advertised name was changed from <code>"Claude Controller"</code> to <code>"Clawdmeter"</code>. Three functional locations must agree for discovery-by-name to work — the firmware, the Linux/macOS daemon, and the Windows daemon.</p>
+
+  <div class="cols2">
+    <div class="diff">
+      <span class="path">firmware/src/ble.cpp</span>
+      <span class="del">- #define DEVICE_NAME "Claude Controller"</span><br>
+      <span class="add">+ #define DEVICE_NAME "Clawdmeter"</span>
+    </div>
+    <div class="diff">
+      <span class="path">daemon/claude_usage_daemon.py (macOS/Linux)</span>
+      <span class="del">- DEVICE_NAME = "Claude Controller"</span><br>
+      <span class="add">+ DEVICE_NAME = "Clawdmeter"</span>
+    </div>
+  </div>
+
+  <div class="diff">
+    <span class="path">daemon/claude-usage-daemon.sh (Linux Bash)</span>
+    <span class="del">- DEVICE_NAME="Claude Controller"</span><br>
+    <span class="add">+ DEVICE_NAME="Clawdmeter"</span>
+  </div>
+
+  <div class="note"><strong>Pairing cache note:</strong> Hosts cache the GATT name. An already-paired device keeps showing the old name until you remove it from the Bluetooth manager (<code>bluetoothctl remove &lt;mac&gt;</code> on Linux, or "Forget" in System Settings on macOS/Windows) and re-pair.</div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="macos-daemon">
+  <h2 class="section">10 · macOS Daemon — <code>retrieveConnected</code> Fix</h2>
+  <p class="section-meta"><span class="tag tag-daemon">daemon</span> <span class="tag tag-bug">bug fix</span> commit <code>18282e0</code> — May 30 2026</p>
+
+  <p>On macOS the ESP32 firmware advertises a BLE HID keyboard profile. macOS auto-connects to it and holds the HID link. CoreBluetooth excludes already-connected peripherals from scan results, so the daemon's scan loop never found the device — it was stuck forever with "Device not found" even though the device was visible in System Settings.</p>
+
+  <div class="diagram">
+    <pre>
+Old flow (broken on macOS):
+────────────────────────────────────────────────────────────
+  BleakScanner.find_device_by_name("Clawdmeter")
+        │
+        ▼
+  CoreBluetooth scan result list
+        │   ← ESP32 already held by HID, excluded from results
+        ▼
+  None  →  "Device not found"  →  retry forever
+
+New flow (macOS):
+────────────────────────────────────────────────────────────
+  CoreBluetooth.retrieveConnectedPeripheralsWithServices_([custom UUID])
+        │   ← finds already-connected peripherals directly
+        ▼
+  match custom service UUID  →  connect directly (no scan)
+        │
+        │  fallback if not found via custom UUID:
+        ▼
+  match HID service 0x1812 + exact DEVICE_NAME  →  connect
+        │
+        ▼
+  daemon GATT write channel runs alongside macOS HID link (two slots)
+────────────────────────────────────────────────────────────
+Linux/BlueZ path: unchanged (scan + address cache)
+    </pre>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="windows-daemon">
+  <h2 class="section">11 · Windows Daemon (Brand New)</h2>
+  <p class="section-meta"><span class="tag tag-daemon">daemon</span> commit <code>eb70456</code> — Jun 2 2026</p>
+
+  <p>Before this change there was no native Windows support — users on Windows had to use WSL. A complete Windows port was added: a Python daemon using <code>bleak</code> (WinRT BLE backend) with a system-tray UI via <code>pystray</code>.</p>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>claude_usage_daemon_windows.py</h3>
+      <p>Reads OAuth token from <code>%APPDATA%\Claude\claude_desktop_config.json</code> (no keychain). Polls Anthropic API. BLE scan/connect/write with full auto-reconnect logic.</p>
+    </div>
+    <div class="card">
+      <h3>tray_windows.py</h3>
+      <p><code>pystray</code> system-tray icon. Runs daemon loop in background thread. Status icons reflect connection state. Quit handler shuts daemon cleanly.</p>
+    </div>
+    <div class="card">
+      <h3>autostart_windows.py</h3>
+      <p>Writes <code>HKCU\Software\Microsoft\Windows\CurrentVersion\Run</code> entry via <code>winreg</code> so the tray starts at logon under <code>pythonw.exe</code> (no console window).</p>
+    </div>
+    <div class="card">
+      <h3>Resilience constants</h3>
+      <p><code>CONNECT_RETRIES=3</code>, <code>ZOMBIE_BREAK_LIMIT=1</code> (drops half-open BLE link after first consecutive write failure), <code>RECONNECT_BACKOFF_CAP=8 s</code>.</p>
+    </div>
+  </div>
+
+  <div class="diagram">
+    <pre>
+Windows daemon reconnect state machine:
+──────────────────────────────────────────────────────────────
+         ┌─────────────┐
+         │  SCANNING    │◄──────────────────────────────┐
+         │ (8 s window) │                               │
+         └──────┬───────┘                               │
+                │ found                                 │ scan miss
+                ▼                                       │ or zombie break
+         ┌─────────────┐   write failure (N=1)          │
+         │  CONNECTED   ├───────────────────────────────┘
+         │  (poll 60 s) │
+         └──────┬───────┘
+                │ disconnect detect
+                ▼
+         ┌─────────────┐
+         │  BACKOFF     │  exp. backoff, cap = 8 s
+         │  (fast-retry)│──────────────────────────► SCANNING
+         └─────────────┘
+──────────────────────────────────────────────────────────────
+Rotating log: %LOCALAPPDATA%\Clawdmeter\daemon.log (512 KB × 3)
+    </pre>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="amoled-18-rev2">
+  <h2 class="section">12 · AMOLED-1.8 Hardware Revision Auto-Detection</h2>
+  <p class="section-meta"><span class="tag tag-fw">firmware</span> commit <code>4e54363</code> — Jun 3 2026</p>
+
+  <p>Waveshare silently revised the AMOLED-1.8 hardware. The original board ships with SH8601 display + FT3168 touch (I2C 0x38). A later revision ships with CO5300 display + CST816 touch (I2C 0x15). Both boards are sold under the same product name with no external way to tell them apart.</p>
+
+  <p>The original firmware assumed the first revision, leaving the CO5300 panel blank and spamming I2C errors.</p>
+
+  <div class="diagram">
+    <pre>
+board_init.cpp — probe at boot:
+──────────────────────────────────────────────────────────────────
+  Wire.beginTransmission(0x15)   ← CST816 (Rev 2 touch)
+  Wire.endTransmission()
+        │
+        ├── ACK (0x00)  →  board_rev = REV_CO5300_CST816
+        │                  display: Arduino_CO5300 + col_offset=16
+        │                  touch: FocalTech reader @ 0x15
+        │
+        └── NACK        →  board_rev = REV_SH8601_FT3168
+                           display: Arduino_SH8601
+                           touch: FocalTech reader @ 0x38
+
+One binary, two hardware revisions.
+──────────────────────────────────────────────────────────────────
+CO5300 note: its 368-wide active area sits at GRAM column 16,
+so CO5300_COL_OFFSET=16 is added to all draw calls to center it.
+    </pre>
+  </div>
+
+  <div class="cols2">
+    <div class="card">
+      <h3>board_rev.h (new)</h3>
+      <p>Defines <code>BoardRev</code> enum: <code>REV_SH8601_FT3168</code> and <code>REV_CO5300_CST816</code>. Exposes <code>board_rev()</code> accessor.</p>
+    </div>
+    <div class="card">
+      <h3>display.cpp + touch.cpp</h3>
+      <p>Both switch on <code>board_rev()</code> at runtime. A single <code>Arduino_OLED*</code> base pointer holds either display driver. Touch uses the same FocalTech register layout (0x02–0x06) for both chips — only the I2C address differs.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<!-- ══════════════════════════════════════════════════════════════════════════ -->
+<section id="todays-fix">
+  <h2 class="section">13 · Today's Fix — Windows DEVICE_NAME Mismatch</h2>
+  <p class="section-meta"><span class="tag tag-bug">bug fix</span> <span class="tag tag-daemon">daemon</span> diagnosed &amp; fixed Jun 4 2026</p>
+
+  <p>The Windows daemon was added (§11) <em>before</em> the BLE rename (§9) was merged into the Windows branch. When the PR landed, the Windows daemon's <code>DEVICE_NAME</code> was never updated to match the firmware.</p>
+
+  <p>Symptom: tray app is running, BLE device is powered on and connected via USB — but the device never receives any data. No log file was created in <code>%LOCALAPPDATA%\Clawdmeter\</code> either, confirming the scan loop never found the peripheral and the daemon thread was silently spinning.</p>
+
+  <div class="diagram">
+    <pre>
+Discovery-by-name requires three values to match:
+─────────────────────────────────────────────────────────────────────
+  firmware/src/ble.cpp
+    #define DEVICE_NAME "Clawdmeter"     ← what the ESP32 advertises
+
+  daemon/claude_usage_daemon_windows.py
+    DEVICE_NAME = "Claude Controller"    ← ✗ MISMATCH — never found
+
+  daemon/claude_usage_daemon.py (macOS/Linux)
+    DEVICE_NAME = "Clawdmeter"           ← ✓ already correct (from §9)
+─────────────────────────────────────────────────────────────────────
+    </pre>
+  </div>
+
+  <div class="diff">
+    <span class="path">daemon/claude_usage_daemon_windows.py  (line 26)</span>
+    <span class="del">- DEVICE_NAME = "Claude Controller"</span><br>
+    <span class="add">+ DEVICE_NAME = "Clawdmeter"</span>
+  </div>
+
+  <p>After restarting the tray app the Windows daemon scans for the correct name, finds the device, connects, and begins pushing usage data.</p>
+
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-date">Jun 2 2026</div>
+      <div class="tl-title">Windows daemon PR merged</div>
+      <div class="tl-body">Added with DEVICE_NAME = "Claude Controller" (correct at that point).</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-date">— but BLE rename (§9) was already in main since May 26</div>
+      <div class="tl-title">Windows branch diverged from rename commit</div>
+      <div class="tl-body">The PR was branched before the rename merged, so the rename was not in the Windows daemon when the PR landed.</div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-date">Jun 4 2026</div>
+      <div class="tl-title">Mismatch identified &amp; fixed</div>
+      <div class="tl-body">DEVICE_NAME corrected to "Clawdmeter" in the Windows daemon. Tray restart required to pick up the change.</div>
+    </div>
+  </div>
+</section>
+
+<hr class="section-divider" />
+
+<footer style="text-align:center; color: var(--muted); font-size: .8rem; padding-top: 20px;">
+  Clawdmeter · ESP32-S3 Claude Code usage monitor · document generated Jun 4 2026
+</footer>
+
+</body>
+</html>
