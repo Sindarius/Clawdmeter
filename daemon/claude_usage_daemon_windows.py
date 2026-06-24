@@ -23,6 +23,11 @@ import httpx
 import serial
 import serial.tools.list_ports
 
+try:
+    from clawd_state import resolve_state  # run as a script from daemon/
+except ImportError:  # imported as a package (daemon.*)
+    from daemon.clawd_state import resolve_state
+
 PORT     = "COM3"       # default; override with CLAWDMETER_PORT env var
 BAUDRATE = 115200
 POLL_INTERVAL  = 60     # seconds between API polls
@@ -307,6 +312,7 @@ async def run_serial(stop_event: asyncio.Event, tray_state=None) -> None:
     """Main serial loop: open port → poll API on schedule → write JSON."""
     loop = asyncio.get_running_loop()
     last_poll = 0.0  # poll immediately on first connect
+    last_usage = None  # most recent full usage payload, re-sent with state updates
 
     while not stop_event.is_set():
         # --- open port ---
@@ -329,6 +335,7 @@ async def run_serial(stop_event: asyncio.Event, tray_state=None) -> None:
             tray_state.reconnect_flag = False
 
         # --- poll loop ---
+        last_state = None  # last activity state sent; reset per connection
         try:
             while not stop_event.is_set():
                 # Port switched from the tray menu: drop this port and reopen on
@@ -353,6 +360,9 @@ async def run_serial(stop_event: asyncio.Event, tray_state=None) -> None:
                     break
 
                 now = time.time()
+
+                # Refresh usage figures on the slow API cadence.
+                usage_refreshed = False
                 if now - last_poll >= POLL_INTERVAL:
                     token = read_token()
                     if not token:
@@ -366,17 +376,31 @@ async def run_serial(stop_event: asyncio.Event, tray_state=None) -> None:
                             if tray_state:
                                 tray_state.set_error("token expired — run claude login")
                             payload = None
-
                         if payload is not None:
-                            ok = await loop.run_in_executor(
-                                None, _write_payload, ser, payload
-                            )
-                            if ok:
-                                last_poll = time.time()
-                                if tray_state:
-                                    tray_state.set_connected(last_poll)
-                            else:
-                                break  # port lost — reopen
+                            last_usage = payload
+                            usage_refreshed = True
+
+                # Resolve the live activity state every tick (cheap file checks,
+                # offloaded so the glob never stalls the event loop).
+                try:
+                    state = await loop.run_in_executor(None, resolve_state)
+                except Exception as e:  # never let state resolution kill the loop
+                    log(f"State resolve failed: {e}")
+                    state = last_state or "idle"
+
+                # Send when usage just refreshed OR the activity state changed —
+                # keeps the stoplight responsive (~1s) without extra API polls.
+                if usage_refreshed or state != last_state:
+                    out = dict(last_usage) if last_usage else {}
+                    out["cs"] = state
+                    ok = await loop.run_in_executor(None, _write_payload, ser, out)
+                    if not ok:
+                        break  # port lost — reopen
+                    last_state = state
+                    if usage_refreshed:
+                        last_poll = time.time()
+                        if tray_state:
+                            tray_state.set_connected(last_poll)
 
                 await asyncio.sleep(1.0)
 

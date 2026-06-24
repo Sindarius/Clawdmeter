@@ -95,13 +95,40 @@ static void my_touch_cb(lv_indev_t* indev, lv_indev_data_t* data) {
     }
 }
 
-// Parse a JSON line into UsageData.
-static bool parse_json(const char* json, UsageData* out) {
+// Result of parsing one inbound JSON line.
+//   PARSE_FAIL       — malformed JSON
+//   PARSE_STATE_ONLY — only the live activity state ("cs") changed; usage
+//                      figures were absent and must be left untouched
+//   PARSE_USAGE      — a full usage payload (and possibly state) arrived
+enum parse_kind_t { PARSE_FAIL, PARSE_STATE_ONLY, PARSE_USAGE };
+
+static ClaudeState parse_claude_state(const char* s) {
+    if (!s) return CLAUDE_UNKNOWN;
+    if (strcmp(s, "busy") == 0) return CLAUDE_BUSY;
+    if (strcmp(s, "wait") == 0) return CLAUDE_WAITING;
+    if (strcmp(s, "idle") == 0) return CLAUDE_IDLE;
+    return CLAUDE_UNKNOWN;
+}
+
+// Parse a JSON line, updating only the fields the line actually carries. The
+// daemon sends full usage payloads on its poll cadence but state-only payloads
+// (just "cs") whenever Claude's activity changes in between, so we must not
+// zero out cached usage when a state-only line arrives.
+static parse_kind_t parse_json(const char* json, UsageData* out) {
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     if (err) {
         Serial.printf("JSON parse error: %s\n", err.c_str());
-        return false;
+        return PARSE_FAIL;
+    }
+
+    // Live activity state, if present, applies to either payload kind.
+    if (!doc["cs"].isNull()) {
+        out->claude_state = parse_claude_state(doc["cs"].as<const char*>());
+    }
+
+    if (doc["s"].isNull()) {
+        return PARSE_STATE_ONLY;  // no usage figures in this line
     }
 
     out->session_pct = doc["s"] | 0.0f;
@@ -111,7 +138,7 @@ static bool parse_json(const char* json, UsageData* out) {
     strlcpy(out->status, doc["st"] | "unknown", sizeof(out->status));
     out->ok = doc["ok"] | false;
     out->valid = true;
-    return true;
+    return PARSE_USAGE;
 }
 
 // ---- Serial input buffer ----
@@ -270,21 +297,28 @@ void loop() {
 
     if (serial_json_ready) {
         serial_json_ready = false;
-        if (parse_json(serial_buf, &usage)) {
-            static bool ever_connected = false;
-            if (!ever_connected) {
-                ever_connected = true;
-                ui_set_connected(true);
+        parse_kind_t kind = parse_json(serial_buf, &usage);
+        if (kind != PARSE_FAIL) {
+            // Usage figures only refresh on a full payload; state-only lines
+            // just update the stoplight and must skip rate sampling so they
+            // don't pollute the moving average with stale percentages.
+            if (kind == PARSE_USAGE) {
+                static bool ever_connected = false;
+                if (!ever_connected) {
+                    ever_connected = true;
+                    ui_set_connected(true);
+                }
+                int g_before = usage_rate_group();
+                usage_rate_sample(usage.session_pct);
+                int g_after = usage_rate_group();
+                if (g_after != g_before) {
+                    Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
+                        g_before, g_after, usage.session_pct);
+                    if (splash_is_active()) splash_pick_for_current_rate();
+                }
+                ui_update(&usage);
             }
-            int g_before = usage_rate_group();
-            usage_rate_sample(usage.session_pct);
-            int g_after = usage_rate_group();
-            if (g_after != g_before) {
-                Serial.printf("usage rate: group %d -> %d (s=%.2f%%)\n",
-                    g_before, g_after, usage.session_pct);
-                if (splash_is_active()) splash_pick_for_current_rate();
-            }
-            ui_update(&usage);
+            ui_set_claude_state(usage.claude_state);
             Serial.println("{\"ack\":true}");
         } else {
             Serial.println("{\"err\":true}");
