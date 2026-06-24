@@ -103,6 +103,10 @@ static void compute_layout(const BoardCaps &c)
 #define COL_AMBER THEME_AMBER
 #define COL_RED THEME_RED
 #define COL_BAR_BG THEME_BAR_BG
+#define COL_STATUS_IDLE THEME_STATUS_IDLE
+#define COL_STATUS_WAIT THEME_STATUS_WAIT
+#define COL_STATUS_BUSY THEME_STATUS_BUSY
+#define COL_STATUS_OFF THEME_STATUS_OFF
 
 // ---- Usage screen widgets (single non-splash view) ----
 static lv_obj_t *usage_container;
@@ -119,6 +123,17 @@ static lv_obj_t *lbl_weekly_label;
 static lv_obj_t *lbl_weekly_reset;
 static lv_obj_t *lbl_anim;    // status line: connection state + whimsical idle
 static lv_obj_t *lbl_updated; // "updated Xs ago · ~Ys" timestamp line
+static lv_obj_t *status_dot;  // small stoplight dot, top-right of usage screen
+
+// ---- Status (stoplight) screen widgets ----
+static lv_obj_t *status_container;
+static lv_obj_t *lamp_busy;   // top lamp (red)
+static lv_obj_t *lamp_wait;   // middle lamp (gold)
+static lv_obj_t *lamp_idle;   // bottom lamp (green)
+static lv_obj_t *lbl_status_word;
+
+// Latest activity state, re-applied to widgets by ui_set_claude_state().
+static ClaudeState s_claude_state = CLAUDE_UNKNOWN;
 
 // ---- Logo (shared, on top) ----
 static lv_obj_t *logo_img;
@@ -263,6 +278,36 @@ static lv_color_t pct_color(float pct)
     return COL_GREEN;
 }
 
+static lv_color_t state_color(ClaudeState s)
+{
+    switch (s)
+    {
+    case CLAUDE_BUSY:
+        return COL_STATUS_BUSY;
+    case CLAUDE_WAITING:
+        return COL_STATUS_WAIT;
+    case CLAUDE_IDLE:
+        return COL_STATUS_IDLE;
+    default:
+        return COL_STATUS_OFF;
+    }
+}
+
+static const char *state_word(ClaudeState s)
+{
+    switch (s)
+    {
+    case CLAUDE_BUSY:
+        return "Working";
+    case CLAUDE_WAITING:
+        return "Needs you";
+    case CLAUDE_IDLE:
+        return "Idle";
+    default:
+        return "No session";
+    }
+}
+
 static void format_reset_time(int mins, char *buf, size_t len)
 {
     if (mins < 0)
@@ -346,6 +391,32 @@ static lv_obj_t *make_pill(lv_obj_t *parent, const char *text)
     return lbl;
 }
 
+
+// A single circular stoplight lamp. Starts unlit; ui_set_claude_state()
+// lights the active one (full color + glow) and dims the rest.
+static lv_obj_t *make_lamp(lv_obj_t *parent, int d, lv_color_t color)
+{
+    lv_obj_t *lamp = lv_obj_create(parent);
+    lv_obj_set_size(lamp, d, d);
+    lv_obj_set_style_radius(lamp, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(lamp, 0, 0);
+    lv_obj_set_style_pad_all(lamp, 0, 0);
+    lv_obj_clear_flag(lamp, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(lamp, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_style_bg_color(lamp, color, 0);
+    lv_obj_set_style_bg_opa(lamp, LV_OPA_30, 0); // unlit until lit by state
+    lv_obj_set_style_shadow_color(lamp, color, 0);
+    lv_obj_set_style_shadow_width(lamp, 0, 0);
+    return lamp;
+}
+
+static void set_lamp_lit(lv_obj_t *lamp, bool lit, int glow)
+{
+    if (!lamp)
+        return;
+    lv_obj_set_style_bg_opa(lamp, lit ? LV_OPA_COVER : LV_OPA_20, 0);
+    lv_obj_set_style_shadow_width(lamp, lit ? glow : 0, 0);
+}
 
 // ======== Usage Screen ========
 
@@ -457,6 +528,75 @@ static void init_usage_screen(lv_obj_t *scr)
     lv_obj_set_style_text_font(lbl_updated, &font_mono_32, 0);
     lv_obj_set_style_text_color(lbl_updated, COL_DIM, 0);
     lv_obj_align(lbl_updated, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    // Stoplight dot, top-right — mirrors the dedicated status screen so the
+    // activity state is glanceable without leaving the usage view.
+    int dot_d = (L.scr_h >= 460) ? 22 : 18;
+    status_dot = lv_obj_create(usage_container);
+    lv_obj_set_size(status_dot, dot_d, dot_d);
+    lv_obj_set_style_radius(status_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(status_dot, 0, 0);
+    lv_obj_set_style_pad_all(status_dot, 0, 0);
+    lv_obj_clear_flag(status_dot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(status_dot, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_style_bg_color(status_dot, COL_STATUS_OFF, 0);
+    lv_obj_set_style_bg_opa(status_dot, LV_OPA_COVER, 0);
+    lv_obj_set_style_shadow_color(status_dot, COL_STATUS_OFF, 0);
+    lv_obj_set_style_shadow_width(status_dot, 0, 0);
+    lv_obj_align(status_dot, LV_ALIGN_TOP_RIGHT, -L.margin, L.title_y + 8);
+}
+
+// ======== Status (stoplight) Screen ========
+
+static void init_status_screen(lv_obj_t *scr)
+{
+    status_container = lv_obj_create(scr);
+    lv_obj_set_size(status_container, L.scr_w, L.scr_h);
+    lv_obj_set_pos(status_container, 0, 0);
+    lv_obj_set_style_bg_opa(status_container, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(status_container, 0, 0);
+    lv_obj_set_style_pad_all(status_container, 0, 0);
+    lv_obj_clear_flag(status_container, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(status_container, global_click_cb, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *title = lv_label_create(status_container);
+    lv_label_set_text(title, "Status");
+    lv_obj_set_style_text_font(title, &font_tiempos_56, 0);
+    lv_obj_set_style_text_color(title, COL_TEXT, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 16, L.title_y);
+
+    // Vertical traffic-light housing centered below the title.
+    int lamp_d = L.scr_w / 5;
+    int gap = lamp_d / 4;
+    int pad = lamp_d / 3;
+    int housing_w = lamp_d + 2 * pad;
+    int housing_h = 3 * lamp_d + 2 * gap + 2 * pad;
+
+    lv_obj_t *housing = lv_obj_create(status_container);
+    lv_obj_set_size(housing, housing_w, housing_h);
+    lv_obj_set_style_bg_color(housing, COL_PANEL, 0);
+    lv_obj_set_style_bg_opa(housing, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(housing, lamp_d / 2, 0);
+    lv_obj_set_style_border_width(housing, 0, 0);
+    lv_obj_set_style_pad_all(housing, pad, 0);
+    lv_obj_clear_flag(housing, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(housing, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_set_flex_flow(housing, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(housing, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_align(housing, LV_ALIGN_CENTER, 0, L.content_y / 2 - 20);
+
+    lamp_busy = make_lamp(housing, lamp_d, COL_STATUS_BUSY);
+    lamp_wait = make_lamp(housing, lamp_d, COL_STATUS_WAIT);
+    lamp_idle = make_lamp(housing, lamp_d, COL_STATUS_IDLE);
+
+    lbl_status_word = lv_label_create(status_container);
+    lv_label_set_text(lbl_status_word, state_word(CLAUDE_UNKNOWN));
+    lv_obj_set_style_text_font(lbl_status_word, L.bt_status_font, 0);
+    lv_obj_set_style_text_color(lbl_status_word, COL_DIM, 0);
+    lv_obj_align(lbl_status_word, LV_ALIGN_BOTTOM_MID, 0, -40);
+
+    lv_obj_add_flag(status_container, LV_OBJ_FLAG_HIDDEN);
 }
 
 // ======== Public API ========
@@ -472,6 +612,8 @@ void ui_init(void)
     init_icon_dsc_rgb565a8(&logo_dsc, LOGO_WIDTH, LOGO_HEIGHT, logo_data);
 
     init_usage_screen(scr);
+    init_status_screen(scr);
+    ui_set_claude_state(CLAUDE_UNKNOWN); // paint dot + lamps in their unlit state
     splash_init(scr);
 
     if (splash_get_root())
@@ -583,18 +725,40 @@ void ui_tick_anim(void)
 }
 
 static screen_t prev_non_splash_screen = SCREEN_USAGE;
+
+// Tap order: a single forward rotation through every screen so the dedicated
+// status light is reachable without a dedicated button.
+//   USAGE -> STATUS -> SPLASH -> USAGE ...
+static screen_t next_screen(screen_t s)
+{
+    switch (s)
+    {
+    case SCREEN_USAGE:
+        return SCREEN_STATUS;
+    case SCREEN_STATUS:
+        return SCREEN_SPLASH;
+    case SCREEN_SPLASH:
+        return SCREEN_USAGE;
+    default:
+        return SCREEN_USAGE;
+    }
+}
+
+void ui_cycle_screen(void)
+{
+    ui_show_screen(next_screen(current_screen));
+}
+
 static void global_click_cb(lv_event_t *e)
 {
     (void)e;
-    if (current_screen == SCREEN_SPLASH)
-        ui_show_screen(prev_non_splash_screen);
-    else
-        ui_show_screen(SCREEN_SPLASH);
+    ui_cycle_screen();
 }
 
 void ui_show_screen(screen_t screen)
 {
     lv_obj_add_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(status_container, LV_OBJ_FLAG_HIDDEN);
     splash_hide();
 
     switch (screen)
@@ -604,6 +768,9 @@ void ui_show_screen(screen_t screen)
         break;
     case SCREEN_USAGE:
         lv_obj_clear_flag(usage_container, LV_OBJ_FLAG_HIDDEN);
+        break;
+    case SCREEN_STATUS:
+        lv_obj_clear_flag(status_container, LV_OBJ_FLAG_HIDDEN);
         break;
     default:
         break;
@@ -656,5 +823,31 @@ void ui_set_connected(bool connected)
 
     if (s_ble_connected && !was_connected)
         connected_at_ms = lv_tick_get();
+}
+
+void ui_set_claude_state(ClaudeState state)
+{
+    s_claude_state = state;
+
+    if (status_dot)
+    {
+        lv_color_t c = state_color(state);
+        lv_obj_set_style_bg_color(status_dot, c, 0);
+        lv_obj_set_style_shadow_color(status_dot, c, 0);
+        lv_obj_set_style_shadow_width(status_dot, state == CLAUDE_UNKNOWN ? 0 : 10, 0);
+    }
+
+    int glow = L.scr_w / 8;
+    set_lamp_lit(lamp_busy, state == CLAUDE_BUSY, glow);
+    set_lamp_lit(lamp_wait, state == CLAUDE_WAITING, glow);
+    set_lamp_lit(lamp_idle, state == CLAUDE_IDLE, glow);
+
+    if (lbl_status_word)
+    {
+        lv_label_set_text(lbl_status_word, state_word(state));
+        lv_obj_set_style_text_color(lbl_status_word,
+                                    state == CLAUDE_UNKNOWN ? COL_DIM : state_color(state), 0);
+        lv_obj_align(lbl_status_word, LV_ALIGN_BOTTOM_MID, 0, -40);
+    }
 }
 

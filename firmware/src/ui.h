@@ -4,6 +4,7 @@
 enum screen_t {
     SCREEN_SPLASH,
     SCREEN_USAGE,
+    SCREEN_STATUS,
     SCREEN_COUNT,
 };
 
@@ -12,5 +13,7 @@ void ui_update(const UsageData* data);
 void ui_tick_anim(void);
 void ui_show_screen(screen_t screen);
 void ui_toggle_splash(void);
+void ui_cycle_screen(void);
 screen_t ui_get_current_screen(void);
 void ui_set_connected(bool connected);
+void ui_set_claude_state(ClaudeState state);
